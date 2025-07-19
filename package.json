@@ -1,0 +1,45 @@
+{
+  "name": "chainverdict",
+  "version": "0.2.0",
+  "description": "A comprehensive legal platform connecting citizens with qualified lawyers",
+  "main": "index.js",
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview",
+    "lint": "cd frontend && npm run lint",
+    "test": "cd frontend && npm run test",
+    "install:frontend": "cd frontend && npm install",
+    "install:all": "npm run install:frontend",
+    "clean": "rm -rf frontend/node_modules frontend/dist",
+    "setup": "npm run install:all"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/chainverdict.git"
+  },
+  "keywords": [
+    "legal",
+    "platform",
+    "lawyers",
+    "citizens",
+    "blockchain",
+    "justice",
+    "react",
+    "vite",
+    "tailwind"
+  ],
+  "author": "ChainVerdict Team",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yourusername/chainverdict/issues"
+  },
+  "homepage": "https://github.com/yourusername/chainverdict#readme",
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "workspaces": [
+    "frontend"
+  ]
+}

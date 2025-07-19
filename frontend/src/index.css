@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/* Global Mobile Responsive Fixes */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #0a0b1c 0%, #16182f 100%);
+    background-color: #0a0b1c;
+    overflow-x: hidden;
+  }
+
+  /* Prevent horizontal scroll on mobile */
+  * {
+    box-sizing: border-box;
+  }
+
+  /* Better touch targets for mobile */
+  button, a, input, select, textarea {
+    min-height: 44px;
+  }
+
+  /* Improve text readability on mobile */
+  @media (max-width: 640px) {
+    body {
+      font-size: 16px; /* Prevent zoom on iOS */
+    }
+  }
+}
+
+@layer components {
+  /* Mobile-first responsive containers */
+  .container-responsive {
+    @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Mobile-friendly buttons */
+  .btn-mobile {
+    @apply px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base font-medium rounded-lg transition-all duration-300;
+  }
+
+  /* Mobile-friendly form inputs */
+  .input-mobile {
+    @apply w-full px-3 py-2.5 sm:py-3 text-sm sm:text-base rounded-lg border transition-all duration-300;
+  }
+
+  /* Mobile-friendly text sizes */
+  .text-responsive-xs {
+    @apply text-xs sm:text-sm;
+  }
+
+  .text-responsive-sm {
+    @apply text-sm sm:text-base;
+  }
+
+  .text-responsive-base {
+    @apply text-base sm:text-lg;
+  }
+
+  .text-responsive-lg {
+    @apply text-lg sm:text-xl lg:text-2xl;
+  }
+
+  .text-responsive-xl {
+    @apply text-xl sm:text-2xl lg:text-3xl;
+  }
+
+  .text-responsive-2xl {
+    @apply text-2xl sm:text-3xl lg:text-4xl;
+  }
+
+  .text-responsive-3xl {
+    @apply text-3xl sm:text-4xl lg:text-5xl xl:text-6xl;
+  }
+}
