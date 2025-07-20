@@ -47,6 +47,50 @@
     @apply w-full px-3 py-2.5 sm:py-3 text-sm sm:text-base rounded-lg border transition-all duration-300;
   }
 
+  /* Sexy Toast Animations */
+  .toast-glow {
+    animation: toast-glow 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes toast-glow {
+    from {
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.3), 0 0 40px rgba(6, 182, 212, 0.1);
+    }
+    to {
+      box-shadow: 0 0 30px rgba(6, 182, 212, 0.4), 0 0 60px rgba(6, 182, 212, 0.2);
+    }
+  }
+
+  .toast-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .toast-shimmer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.1),
+      transparent
+    );
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      left: -100%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+
   /* Mobile-friendly text sizes */
   .text-responsive-xs {
     @apply text-xs sm:text-sm;

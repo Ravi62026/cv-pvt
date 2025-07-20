@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -22,20 +22,36 @@ import {
 } from 'lucide-react';
 
 import ReCAPTCHA from 'react-google-recaptcha';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { authAPI } from '../services/api';
 import { AuthBackground } from '../components/AuthBackground';
 import { AuthContent } from '../components/AuthContent';
 
 const SignupPage = () => {
   const navigate = useNavigate();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { success, error } = useToast();
   const [step, setStep] = useState(1);
+  const captchaRef = useRef(null);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, authLoading, navigate]);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     password: '',
     confirmPassword: '',
-    role: 'citizen',
+    role: '',
     barId: '',
+    specialization: [],
+    experience: '',
+    education: '',
     studentId: '',
     aadhaar: '',
     acceptTerms: false,
@@ -140,16 +156,16 @@ const SignupPage = () => {
     
     if (!formData.phone) {
       newErrors.phone = 'Phone number is required';
-    } else if (!/^[6-9]\d{9}$/.test(formData.phone)) {
-      newErrors.phone = 'Please enter a valid Indian phone number';
+    } else if (!/^[0-9]{10}$/.test(formData.phone)) {
+      newErrors.phone = 'Please enter a valid 10-digit phone number';
     }
     
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    } else if (passwordStrength < 3) {
-      newErrors.password = 'Password is too weak. Please include uppercase, lowercase, numbers, and special characters.';
+    } else if (formData.password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+      newErrors.password = 'Password must contain at least one uppercase letter, one lowercase letter, and one number';
     }
     
     if (!formData.confirmPassword) {
@@ -158,10 +174,17 @@ const SignupPage = () => {
       newErrors.confirmPassword = 'Passwords do not match';
     }
     
-    if (formData.role === 'lawyer' && !formData.barId) {
-      newErrors.barId = 'Bar ID is required for lawyers';
+    // Bar ID is optional during registration for lawyers
+    // if (formData.role === 'lawyer' && !formData.barId) {
+    //   newErrors.barId = 'Bar ID is required for lawyers';
+    // }
+
+    if (formData.role === 'citizen' && !formData.aadhaar) {
+      newErrors.aadhaar = 'Aadhaar number is required for citizens';
+    } else if (formData.role === 'citizen' && formData.aadhaar && !/^[0-9]{12}$/.test(formData.aadhaar)) {
+      newErrors.aadhaar = 'Please enter a valid 12-digit Aadhaar number';
     }
-    
+
     if (!formData.acceptTerms) {
       newErrors.acceptTerms = 'You must accept the terms and conditions';
     }
@@ -186,21 +209,38 @@ const SignupPage = () => {
       ...formData,
       captcha: value
     });
+    // Clear any previous captcha errors
+    if (errors.captcha) {
+      setErrors({
+        ...errors,
+        captcha: ''
+      });
+    }
+  };
+
+  const resetCaptcha = () => {
+    if (captchaRef.current) {
+      captchaRef.current.reset();
+    }
+    setFormData({
+      ...formData,
+      captcha: ''
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateStep2()) return;
-    
+
     if (!formData.captcha) {
       setApiError('Please complete the CAPTCHA verification');
       return;
     }
-    
+
     setIsLoading(true);
     setApiError('');
-    
+
     try {
       const userData = {
         name: formData.name,
@@ -208,22 +248,75 @@ const SignupPage = () => {
         phone: formData.phone,
         password: formData.password,
         role: formData.role,
-        ...(formData.role === 'lawyer' && { barId: formData.barId }),
-        ...(formData.role === 'citizen' && { aadhaar: formData.aadhaar }),
-        acceptTerms: formData.acceptTerms.toString(),
-        captcha: formData.captcha
+        captchaToken: formData.captcha,
+        address: {
+          street: '',
+          city: '',
+          state: '',
+          pincode: '',
+        },
       };
 
-      // Static signup - just navigate to login for now
-      console.log('Signup attempt:', userData);
+      // Add Aadhaar for citizens
+      if (formData.role === 'citizen') {
+        userData.aadhaar = formData.aadhaar;
+      }
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Add lawyer details (required for lawyers)
+      if (formData.role === 'lawyer') {
+        userData.lawyerDetails = {
+          barRegistrationNumber: formData.barId || '',
+          specialization: formData.specialization.length > 0 ? formData.specialization : ['General Practice'],
+          experience: parseInt(formData.experience) || 0,
+          education: formData.education || 'Law Graduate',
+        };
+      }
 
-      // Success - redirect to login
-      navigate('/login');
-    } catch (error) {
-      setApiError('An unexpected error occurred. Please try again.');
+      // Call registration API
+      const response = await authAPI.register(userData);
+
+      if (response.success) {
+        // Auto-login after successful registration
+        await login(response.data.tokens.accessToken, response.data.user);
+
+        success('Registration successful! Welcome to CV-PVT.');
+
+        // Redirect based on role and profile completion
+        const userRole = response.data.user.role;
+        if (userRole === 'lawyer' && !response.data.user.profileCompletion?.roleSpecificDetails) {
+          // Redirect lawyer to complete profile
+          navigate('/profile?complete=true');
+        } else if (userRole === 'admin') {
+          navigate('/admin/dashboard');
+        } else if (userRole === 'lawyer') {
+          navigate('/lawyer/dashboard');
+        } else {
+          navigate('/citizen/dashboard');
+        }
+      } else {
+        // Handle API response errors
+        let errorMessage = response.error || 'Registration failed';
+        setApiError(errorMessage);
+        error(errorMessage);
+        resetCaptcha();
+        return;
+      }
+    } catch (err) {
+      console.error('Registration error:', err);
+      let errorMessage = 'An unexpected error occurred. Please try again.';
+
+      // Handle specific validation errors
+      if (err.response && err.response.data && err.response.data.errors) {
+        const validationErrors = err.response.data.errors;
+        errorMessage = validationErrors.map(error => error.msg).join(', ');
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setApiError(errorMessage);
+      error(errorMessage);
+      // Reset CAPTCHA on error
+      resetCaptcha();
     } finally {
       setIsLoading(false);
     }
@@ -452,6 +545,7 @@ const SignupPage = () => {
                 )}
 
                 <motion.button
+                  type="button"
                   onClick={handleNext}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -824,7 +918,7 @@ const SignupPage = () => {
                   {formData.role === 'lawyer' && (
                     <div>
                       <label htmlFor="barId" className="block text-sm font-medium text-gray-200 mb-2">
-                        Bar Council ID
+                        Bar Council ID (Optional)
                       </label>
                       <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -855,6 +949,92 @@ const SignupPage = () => {
                           </motion.p>
                         )}
                       </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* Experience Field (for lawyers) */}
+                  {formData.role === 'lawyer' && (
+                    <div>
+                      <label htmlFor="experience" className="block text-sm font-medium text-gray-200 mb-2">
+                        Years of Experience (Optional)
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Gavel className="h-5 w-5 text-gray-500" />
+                        </div>
+                        <input
+                          id="experience"
+                          name="experience"
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={formData.experience}
+                          onChange={handleChange}
+                          className="block w-full pl-10 pr-3 py-3 bg-[#1D1F3B] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                          placeholder="Years of practice"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Specialization Field (for lawyers) */}
+                  {formData.role === 'lawyer' && (
+                    <div>
+                      <label htmlFor="specialization" className="block text-sm font-medium text-gray-200 mb-2">
+                        Specialization (Optional)
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Gavel className="h-5 w-5 text-gray-500" />
+                        </div>
+                        <select
+                          id="specialization"
+                          name="specialization"
+                          value={formData.specialization[0] || ''}
+                          onChange={(e) => {
+                            setFormData({
+                              ...formData,
+                              specialization: e.target.value ? [e.target.value] : []
+                            });
+                          }}
+                          className="block w-full pl-10 pr-3 py-3 bg-[#1D1F3B] border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                        >
+                          <option value="">Select specialization</option>
+                          <option value="Criminal Law">Criminal Law</option>
+                          <option value="Civil Law">Civil Law</option>
+                          <option value="Corporate Law">Corporate Law</option>
+                          <option value="Family Law">Family Law</option>
+                          <option value="Property Law">Property Law</option>
+                          <option value="Labor Law">Labor Law</option>
+                          <option value="Tax Law">Tax Law</option>
+                          <option value="Constitutional Law">Constitutional Law</option>
+                          <option value="Environmental Law">Environmental Law</option>
+                          <option value="General Practice">General Practice</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Education Field (for lawyers) */}
+                  {formData.role === 'lawyer' && (
+                    <div>
+                      <label htmlFor="education" className="block text-sm font-medium text-gray-200 mb-2">
+                        Education (Optional)
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <FileText className="h-5 w-5 text-gray-500" />
+                        </div>
+                        <input
+                          id="education"
+                          name="education"
+                          type="text"
+                          value={formData.education}
+                          onChange={handleChange}
+                          className="block w-full pl-10 pr-3 py-3 bg-[#1D1F3B] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                          placeholder="e.g., LLB, LLM, etc."
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -906,6 +1086,7 @@ const SignupPage = () => {
                   >
                     {import.meta.env.VITE_RECAPTCHA_SITE_KEY ? (
                       <ReCAPTCHA
+                        ref={captchaRef}
                         sitekey={import.meta.env.VITE_RECAPTCHA_SITE_KEY}
                         onChange={handleCaptchaChange}
                         theme="dark"

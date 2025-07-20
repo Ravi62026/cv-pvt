@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, User, LogOut, Settings, LayoutDashboard, Cpu } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import logCv from '../assets/log-cv.jpg';
 
 const Navbar = () => {
@@ -10,10 +12,8 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Static auth state for now
-  const isAuthenticated = false;
-  const user = null;
+  const { isAuthenticated, user, logout: authLogout } = useAuth();
+  const { success, error } = useToast();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -24,9 +24,14 @@ const Navbar = () => {
   }, []);
 
   const handleLogout = async () => {
-    // Static logout - just navigate to home
-    setUserMenuOpen(false);
-    navigate('/');
+    try {
+      setUserMenuOpen(false);
+      await authLogout();
+      success('Logged out successfully');
+      navigate('/');
+    } catch (err) {
+      error('Logout failed. Please try again.');
+    }
   };
 
   const isActive = (path) => location.pathname === path;
@@ -40,8 +45,22 @@ const Navbar = () => {
     { name: 'Contact', path: '/contact', public: true },
   ];
 
+  const getDashboardPath = () => {
+    if (!user) return '/dashboard';
+    switch (user.role) {
+      case 'admin':
+        return '/admin/dashboard';
+      case 'lawyer':
+        return '/lawyer/dashboard';
+      case 'citizen':
+        return '/citizen/dashboard';
+      default:
+        return '/dashboard';
+    }
+  };
+
   const authenticatedNavItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    { name: 'Dashboard', path: getDashboardPath(), icon: LayoutDashboard },
     { name: 'AI Tools', path: '/dashboard/ai-tools', icon: Cpu },
   ];
 

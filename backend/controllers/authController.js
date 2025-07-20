@@ -2,6 +2,8 @@ import User from "../models/User.js";
 import { generateTokenPair, verifyRefreshToken } from "../utils/jwt.js";
 import { verifyCaptcha } from "../utils/captcha.js";
 import { validationResult } from "express-validator";
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 // Helper function to clean user data based on role
 const cleanUserData = (user) => {
@@ -98,10 +100,35 @@ export const register = async (req, res) => {
         };
 
         // Add lawyer details if role is lawyer
-        if (role === "lawyer" && lawyerDetails) {
-            userData.lawyerDetails = {
-                ...lawyerDetails,
-                verificationStatus: "pending",
+        if (role === "lawyer") {
+            if (lawyerDetails) {
+                userData.lawyerDetails = {
+                    ...lawyerDetails,
+                    verificationStatus: "pending",
+                };
+                // Mark role-specific details as complete if provided
+                userData.profileCompletion = {
+                    basicInfo: true,
+                    roleSpecificDetails: true,
+                    documentsUploaded: false, // Will be updated when documents are uploaded
+                };
+            } else {
+                // Lawyer without details - allow partial registration
+                userData.lawyerDetails = {
+                    verificationStatus: "pending",
+                };
+                userData.profileCompletion = {
+                    basicInfo: true,
+                    roleSpecificDetails: false,
+                    documentsUploaded: false,
+                };
+            }
+        } else {
+            // Citizens have auto-complete profile
+            userData.profileCompletion = {
+                basicInfo: true,
+                roleSpecificDetails: true,
+                documentsUploaded: true,
             };
         }
 
@@ -212,9 +239,8 @@ export const login = async (req, res) => {
             role: user.role,
         });
 
-        // Update refresh token
-        user.refreshToken = refreshToken;
-        await user.save();
+        // Update refresh token without triggering full validation
+        await User.findByIdAndUpdate(user._id, { refreshToken }, { runValidators: false });
 
         // Set cookie options
         const cookieOptions = {
@@ -286,9 +312,8 @@ export const refreshToken = async (req, res) => {
                 role: user.role,
             });
 
-        // Update refresh token
-        user.refreshToken = newRefreshToken;
-        await user.save();
+        // Update refresh token without triggering full validation
+        await User.findByIdAndUpdate(user._id, { refreshToken: newRefreshToken }, { runValidators: false });
 
         // Set cookie options
         const cookieOptions = {
@@ -412,6 +437,162 @@ export const updateProfile = async (req, res) => {
         res.status(500).json({
             success: false,
             message: "Failed to update profile",
+        });
+    }
+};
+
+// Forgot password
+export const forgotPassword = async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: "Validation failed",
+                errors: errors.array(),
+            });
+        }
+
+        const { email } = req.body;
+
+        // Check if user exists
+        const user = await User.findOne({ email });
+        if (!user) {
+            // Don't reveal if user exists or not for security
+            return res.json({
+                success: true,
+                message: "If an account with that email exists, a password reset link has been sent.",
+            });
+        }
+
+        // Generate reset token
+        const resetToken = crypto.randomBytes(32).toString("hex");
+        const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+        // Set reset token and expiry (10 minutes) without triggering full validation
+        await User.findByIdAndUpdate(user._id, {
+            passwordResetToken: resetTokenHash,
+            passwordResetExpires: Date.now() + 10 * 60 * 1000
+        }, { runValidators: false });
+
+        // In development, return the token for testing
+        if (process.env.NODE_ENV === "development") {
+            return res.json({
+                success: true,
+                message: "Password reset token generated successfully",
+                data: {
+                    resetToken, // Only for testing
+                    message: "Use this token to reset your password",
+                },
+            });
+        }
+
+        // In production, send email (implement email service)
+        // await sendPasswordResetEmail(user.email, resetToken);
+
+        res.json({
+            success: true,
+            message: "If an account with that email exists, a password reset link has been sent.",
+        });
+    } catch (error) {
+        console.error("Forgot password error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to process password reset request",
+        });
+    }
+};
+
+// Reset password
+export const resetPassword = async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: "Validation failed",
+                errors: errors.array(),
+            });
+        }
+
+        const { token, newPassword } = req.body;
+
+        // Hash the token to compare with stored hash
+        const resetTokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+        // Find user with valid reset token
+        const user = await User.findOne({
+            passwordResetToken: resetTokenHash,
+            passwordResetExpires: { $gt: Date.now() },
+        });
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid or expired password reset token",
+            });
+        }
+
+        // Update password
+        user.password = newPassword; // Will be hashed by pre-save middleware
+        user.passwordResetToken = undefined;
+        user.passwordResetExpires = undefined;
+        user.refreshToken = null; // Invalidate all sessions
+        await user.save({ validateBeforeSave: false });
+
+        res.json({
+            success: true,
+            message: "Password reset successfully. Please login with your new password.",
+        });
+    } catch (error) {
+        console.error("Reset password error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to reset password",
+        });
+    }
+};
+
+// Update password (for authenticated users)
+export const updatePassword = async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: "Validation failed",
+                errors: errors.array(),
+            });
+        }
+
+        const { currentPassword, newPassword } = req.body;
+
+        // Get user with password
+        const user = await User.findById(req.user._id).select("+password");
+
+        // Verify current password
+        const isCurrentPasswordValid = await user.comparePassword(currentPassword);
+        if (!isCurrentPasswordValid) {
+            return res.status(400).json({
+                success: false,
+                message: "Current password is incorrect",
+            });
+        }
+
+        // Update password
+        user.password = newPassword; // Will be hashed by pre-save middleware
+        user.refreshToken = null; // Invalidate all sessions
+        await user.save({ validateBeforeSave: false });
+
+        res.json({
+            success: true,
+            message: "Password updated successfully. Please login again.",
+        });
+    } catch (error) {
+        console.error("Update password error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to update password",
         });
     }
 };

@@ -34,26 +34,37 @@ export const validateRegister = [
         .notEmpty()
         .withMessage("CAPTCHA verification is required"),
 
-    // Lawyer-specific validations
-    body("lawyerDetails.barRegistrationNumber")
-        .if(body("role").equals("lawyer"))
+    body("aadhaar")
+        .if(body("role").equals("citizen"))
         .notEmpty()
-        .withMessage("Bar registration number is required for lawyers"),
+        .withMessage("Aadhaar number is required for citizens")
+        .matches(/^[0-9]{12}$/)
+        .withMessage("Aadhaar number must be 12 digits"),
+
+    // Lawyer-specific validations (optional during registration)
+    body("lawyerDetails.barRegistrationNumber")
+        .optional()
+        .if(body("role").equals("lawyer"))
+        .isLength({ min: 1 })
+        .withMessage("Bar registration number cannot be empty if provided"),
 
     body("lawyerDetails.specialization")
+        .optional()
         .if(body("role").equals("lawyer"))
         .isArray({ min: 1 })
-        .withMessage("At least one specialization is required for lawyers"),
+        .withMessage("At least one specialization is required if provided"),
 
     body("lawyerDetails.experience")
+        .optional()
         .if(body("role").equals("lawyer"))
         .isInt({ min: 0, max: 50 })
         .withMessage("Experience must be between 0 and 50 years"),
 
     body("lawyerDetails.education")
+        .optional()
         .if(body("role").equals("lawyer"))
-        .notEmpty()
-        .withMessage("Education details are required for lawyers"),
+        .isLength({ min: 1 })
+        .withMessage("Education details cannot be empty if provided"),
 ];
 
 // User login validation
@@ -226,6 +237,38 @@ export const validatePasswordChange = [
     body("currentPassword")
         .notEmpty()
         .withMessage("Current password is required"),
+
+    body("newPassword")
+        .isLength({ min: 6 })
+        .withMessage("New password must be at least 6 characters long")
+        .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+        .withMessage(
+            "New password must contain at least one uppercase letter, one lowercase letter, and one number"
+        ),
+
+    body("confirmPassword").custom((value, { req }) => {
+        if (value !== req.body.newPassword) {
+            throw new Error(
+                "Password confirmation does not match new password"
+            );
+        }
+        return true;
+    }),
+];
+
+// Forgot password validation
+export const validateForgotPassword = [
+    body("email")
+        .isEmail()
+        .normalizeEmail()
+        .withMessage("Please provide a valid email"),
+];
+
+// Reset password validation
+export const validateResetPassword = [
+    body("token")
+        .notEmpty()
+        .withMessage("Reset token is required"),
 
     body("newPassword")
         .isLength({ min: 6 })

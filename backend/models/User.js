@@ -33,6 +33,12 @@ const userSchema = new mongoose.Schema({
         type: String,
         match: [/^[0-9]{10}$/, "Please provide a valid 10-digit phone number"],
     },
+    // Aadhaar number for citizens (optional)
+    aadhaar: {
+        type: String,
+        match: [/^[0-9]{12}$/, "Please provide a valid 12-digit Aadhaar number"],
+        required: function() { return this.role === "citizen"; }
+    },
     address: {
         street: String,
         city: String,
@@ -58,26 +64,66 @@ const userSchema = new mongoose.Schema({
         type: String,
         select: false,
     },
+    // Password reset fields
+    passwordResetToken: {
+        type: String,
+        select: false,
+    },
+    passwordResetExpires: {
+        type: Date,
+        select: false,
+    },
+    // Profile completion tracking
+    profileCompletion: {
+        basicInfo: {
+            type: Boolean,
+            default: true, // Always true after registration
+        },
+        roleSpecificDetails: {
+            type: Boolean,
+            default: function() {
+                return this.role === "citizen"; // Citizens auto-complete, lawyers need to fill details
+            },
+        },
+        documentsUploaded: {
+            type: Boolean,
+            default: function() {
+                return this.role === "citizen"; // Citizens don't need documents
+            },
+        },
+    },
     // Lawyer specific fields (only populated for lawyers)
     lawyerDetails: {
         type: {
             barRegistrationNumber: {
                 type: String,
-                required: function() { return this.parent().role === "lawyer"; }
+                required: function() {
+                    // Only required if lawyer profile is being completed
+                    return this.parent().role === "lawyer" && this.parent().profileCompletion?.roleSpecificDetails;
+                }
             },
             specialization: {
                 type: [String],
-                required: function() { return this.parent().role === "lawyer"; }
+                default: ['General Practice'],
+                required: function() {
+                    return this.parent().role === "lawyer" && this.parent().profileCompletion?.roleSpecificDetails;
+                }
             },
             experience: {
                 type: Number,
                 min: 0,
                 max: 50,
-                required: function() { return this.parent().role === "lawyer"; }
+                default: 0,
+                required: function() {
+                    return this.parent().role === "lawyer" && this.parent().profileCompletion?.roleSpecificDetails;
+                }
             },
             education: {
                 type: String,
-                required: function() { return this.parent().role === "lawyer"; }
+                default: 'Law Graduate',
+                required: function() {
+                    return this.parent().role === "lawyer" && this.parent().profileCompletion?.roleSpecificDetails;
+                }
             },
             verificationStatus: {
                 type: String,

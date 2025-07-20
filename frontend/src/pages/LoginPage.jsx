@@ -3,11 +3,17 @@ import ReCAPTCHA from 'react-google-recaptcha';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, LogIn, ArrowRight, AlertCircle, Scale, Gavel } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { authAPI } from '../services/api';
 import { AuthBackground } from '../components/AuthBackground';
 import { AuthContent } from '../components/AuthContent';
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { success, error } = useToast();
+
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -20,6 +26,13 @@ const LoginPage = () => {
   const [apiError, setApiError] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, authLoading, navigate]);
 
   // Debounce typing indicator
   useEffect(() => {
@@ -82,22 +95,42 @@ const LoginPage = () => {
     setApiError('');
 
     try {
-      // Static login - just navigate to home for now
-      console.log('Login attempt:', formData.email);
+      // Call login API
+      const response = await authAPI.login({
+        email: formData.email,
+        password: formData.password,
+        captcha: formData.captcha,
+      });
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (response.success) {
+        // Login to context
+        await login(response.data.tokens.accessToken, response.data.user);
 
-      // Show success animation
-      setIsSuccess(true);
-      setIsLoading(false);
+        // Show success message
+        success('Login successful! Welcome back.');
 
-      // Wait for success animation then redirect
-      setTimeout(() => {
-        navigate('/home');
-      }, 1500);
-    } catch (error) {
-      setApiError('An unexpected error occurred. Please try again.');
+        // Show success animation
+        setIsSuccess(true);
+        setIsLoading(false);
+
+        // Wait for success animation then redirect based on role
+        setTimeout(() => {
+          const userRole = response.data.user.role;
+          if (userRole === 'admin') {
+            navigate('/admin/dashboard');
+          } else if (userRole === 'lawyer') {
+            navigate('/lawyer/dashboard');
+          } else {
+            navigate('/citizen/dashboard');
+          }
+        }, 1500);
+      } else {
+        throw new Error(response.error || 'Login failed');
+      }
+    } catch (err) {
+      const errorMessage = err.message || 'An unexpected error occurred. Please try again.';
+      setApiError(errorMessage);
+      error(errorMessage);
       setIsLoading(false);
     }
   };
