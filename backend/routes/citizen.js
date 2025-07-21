@@ -6,9 +6,17 @@ import {
     sendDirectMessageRequest,
     getPendingRequests,
     getReceivedOffers,
+    getMyCaseRequests,
+    getMyCaseOffers,
+    acceptCaseOffer,
+    rejectCaseOffer,
     getAvailableLawyers,
     requestLawyerForQuery,
     requestLawyerForDispute,
+    sendDirectConnectionRequest,
+    getMyConnectedLawyers,
+    getMyDirectChats,
+    verifyAllLawyers,
 } from "../controllers/citizenController.js";
 import { protect, authorize } from "../middleware/auth.js";
 import { messageLimiter } from "../middleware/rateLimiter.js";
@@ -51,5 +59,16 @@ router.post(
 // Request and offer management
 router.get("/pending-requests", getPendingRequests);
 router.get("/received-offers", getReceivedOffers);
+
+// Case-specific request and offer management
+router.get("/my-case-requests", getMyCaseRequests);
+router.get("/my-case-offers", getMyCaseOffers);
+router.post("/accept-case-offer/:offerId", acceptCaseOffer);
+router.post("/reject-case-offer/:offerId", rejectCaseOffer);
+
+// Direct connection management
+router.post("/direct-connection-request/:lawyerId", messageLimiter, sendDirectConnectionRequest);
+router.get("/connected-lawyers", getMyConnectedLawyers);
+router.get("/direct-chats", getMyDirectChats);
 
 export default router;

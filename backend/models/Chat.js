@@ -43,6 +43,11 @@ const chatSchema = new mongoose.Schema({
         },
         caseId: mongoose.Schema.Types.ObjectId,
     },
+    // For direct connections
+    directConnection: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "DirectConnection",
+    },
     messages: [
         {
             sender: {

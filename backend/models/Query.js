@@ -65,6 +65,25 @@ const querySchema = new mongoose.Schema({
             message: String,
         },
     ],
+    citizenRequests: [
+        {
+            lawyerId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+            },
+            status: {
+                type: String,
+                enum: ["pending", "accepted", "rejected"],
+                default: "pending",
+            },
+            requestedAt: {
+                type: Date,
+                default: Date.now,
+            },
+            respondedAt: Date,
+            message: String,
+        },
+    ],
     documents: [
         {
             filename: String,
@@ -152,6 +171,25 @@ querySchema.methods.hasRequestedLawyer = function (lawyerId) {
 querySchema.methods.addLawyerRequest = function (lawyerId, message = "") {
     if (!this.hasRequestedLawyer(lawyerId)) {
         this.lawyerRequests.push({
+            lawyerId,
+            message,
+        });
+    }
+};
+
+// Method to check if citizen request already exists
+querySchema.methods.hasCitizenRequestedLawyer = function (lawyerId) {
+    return this.citizenRequests.some(
+        (req) =>
+            req.lawyerId.toString() === lawyerId.toString() &&
+            req.status === "pending"
+    );
+};
+
+// Method to add citizen request
+querySchema.methods.addCitizenRequest = function (lawyerId, message = "") {
+    if (!this.hasCitizenRequestedLawyer(lawyerId)) {
+        this.citizenRequests.push({
             lawyerId,
             message,
         });

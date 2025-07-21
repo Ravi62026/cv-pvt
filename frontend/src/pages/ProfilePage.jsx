@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { User, Mail, Phone, MapPin, Edit3, Save, X, Camera, Shield, Award, Lock, Eye, EyeOff } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Edit3, Save, X, Camera, Shield, Award, Lock, Eye, EyeOff, Clock, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { authAPI } from '../services/api';
 
 const ProfilePage = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, refreshUser } = useAuth();
   const { success, error } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -65,6 +65,39 @@ const ProfilePage = () => {
       });
     }
   }, [user]);
+
+  // Refresh user data when component mounts to get latest verification status
+  useEffect(() => {
+    const refreshUserData = async () => {
+      if (user && user.role === 'lawyer') {
+        try {
+          await refreshUser();
+        } catch (err) {
+          console.error('Failed to refresh user data:', err);
+        }
+      }
+    };
+
+    refreshUserData();
+  }, []); // Only run once when component mounts
+
+  // Manual refresh function
+  const handleRefreshUser = async () => {
+    try {
+      setIsLoading(true);
+      const result = await refreshUser();
+      if (result.success) {
+        success('Profile data refreshed successfully');
+      } else {
+        error('Failed to refresh profile data');
+      }
+    } catch (err) {
+      error('Failed to refresh profile data');
+      console.error('Refresh error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -249,9 +282,36 @@ const ProfilePage = () => {
                   }`}>
                     {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
                   </span>
-                  {user.isVerified && (
-                    <div className="flex items-center space-x-1 bg-green-500/20 text-green-300 px-2 py-1 rounded-full text-sm">
-                      <Shield className="h-3 w-3" />
+
+                  {/* Verification Status */}
+                  {user.role === 'lawyer' ? (
+                    <div className={`flex items-center space-x-1 px-3 py-1 rounded-full text-sm font-medium ${
+                      user.lawyerDetails?.verificationStatus === 'verified'
+                        ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                        : user.lawyerDetails?.verificationStatus === 'rejected'
+                        ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                        : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                    }`}>
+                      {user.lawyerDetails?.verificationStatus === 'verified' ? (
+                        <>
+                          <Shield className="h-4 w-4" />
+                          <span>Verified Lawyer</span>
+                        </>
+                      ) : user.lawyerDetails?.verificationStatus === 'rejected' ? (
+                        <>
+                          <X className="h-4 w-4" />
+                          <span>Verification Rejected</span>
+                        </>
+                      ) : (
+                        <>
+                          <Clock className="h-4 w-4" />
+                          <span>Verification Pending</span>
+                        </>
+                      )}
+                    </div>
+                  ) : user.isVerified && (
+                    <div className="flex items-center space-x-1 bg-green-500/20 text-green-300 px-3 py-1 rounded-full text-sm font-medium border border-green-500/30">
+                      <Shield className="h-4 w-4" />
                       <span>Verified</span>
                     </div>
                   )}
@@ -260,13 +320,23 @@ const ProfilePage = () => {
             </div>
             <div className="flex space-x-3">
               {!isEditing ? (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-                >
-                  <Edit3 className="h-4 w-4" />
-                  <span>Edit Profile</span>
-                </button>
+                <>
+                  <button
+                    onClick={handleRefreshUser}
+                    disabled={isLoading}
+                    className="flex items-center space-x-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <Edit3 className="h-4 w-4" />
+                    <span>Edit Profile</span>
+                  </button>
+                </>
               ) : (
                 <>
                   <button

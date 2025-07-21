@@ -18,7 +18,7 @@ const cleanUserData = (user) => {
         case "citizen":
             // Citizens don't need these fields
             delete userData.lawyerDetails;
-            // Keep isVerified as true for citizens
+            // Citizens are always verified
             userData.isVerified = true;
             break;
 
@@ -32,13 +32,19 @@ const cleanUserData = (user) => {
                 if (!userData.lawyerDetails.verificationDocuments || userData.lawyerDetails.verificationDocuments.length === 0) {
                     userData.lawyerDetails.verificationDocuments = [];
                 }
+
+                // For lawyers, keep the existing isVerified value
+                // (it will be set by admin verification process)
+            } else {
+                // If no lawyerDetails, lawyer is not verified
+                userData.isVerified = false;
             }
             break;
 
         case "admin":
             // Admins don't need lawyer details
             delete userData.lawyerDetails;
-            // Keep isVerified as true for admins
+            // Admins are always verified
             userData.isVerified = true;
             break;
 

@@ -88,7 +88,7 @@ export const requireVerifiedLawyer = (req, res, next) => {
         });
     }
 
-    if (req.user.lawyerDetails?.verificationStatus !== "verified") {
+    if (!req.user.isVerified) {
         return res.status(403).json({
             success: false,
             message: "Lawyer verification required to access this feature",

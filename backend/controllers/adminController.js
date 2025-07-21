@@ -71,7 +71,7 @@ export const getDashboardAnalytics = async (req, res) => {
             Dispute.countDocuments({ status: "resolved" }),
             User.countDocuments({
                 role: "lawyer",
-                "lawyerDetails.verificationStatus": "pending",
+                isVerified: false,
             }),
         ]);
 
@@ -175,7 +175,12 @@ export const getAllUsers = async (req, res) => {
         }
 
         if (verificationStatus && verificationStatus !== "all") {
-            query["lawyerDetails.verificationStatus"] = verificationStatus;
+            // Map verificationStatus to isVerified for filtering
+            if (verificationStatus === "verified") {
+                query.isVerified = true;
+            } else if (verificationStatus === "pending" || verificationStatus === "rejected") {
+                query.isVerified = false;
+            }
         }
 
         if (search) {
@@ -240,7 +245,7 @@ export const getPendingLawyerVerifications = async (req, res) => {
 
         const pendingLawyers = await User.find({
             role: "lawyer",
-            "lawyerDetails.verificationStatus": "pending",
+            isVerified: false,
         })
             .select("-password -refreshToken")
             .sort({ createdAt: -1 })
@@ -249,7 +254,7 @@ export const getPendingLawyerVerifications = async (req, res) => {
 
         const total = await User.countDocuments({
             role: "lawyer",
-            "lawyerDetails.verificationStatus": "pending",
+            isVerified: false,
         });
 
         // Clean lawyer data
@@ -310,17 +315,14 @@ export const updateLawyerVerification = async (req, res) => {
             });
         }
 
-        // Update verification status
-        lawyer.lawyerDetails.verificationStatus = verificationStatus;
-
-        if (verificationStatus === "verified") {
-            lawyer.isVerified = true;
-        } else if (verificationStatus === "rejected") {
-            lawyer.isVerified = false;
-        }
+        // Update verification status directly on isVerified field
+        lawyer.isVerified = verificationStatus === "verified";
 
         // Store rejection reason or approval notes
         if (reason || notes) {
+            if (!lawyer.lawyerDetails) {
+                lawyer.lawyerDetails = {};
+            }
             lawyer.lawyerDetails.verificationNotes = reason || notes;
         }
 

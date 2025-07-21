@@ -37,7 +37,7 @@ const userSchema = new mongoose.Schema({
     aadhaar: {
         type: String,
         match: [/^[0-9]{12}$/, "Please provide a valid 12-digit Aadhaar number"],
-        required: function() { return this.role === "citizen"; }
+        function() { return this.role === "citizen"; }
     },
     address: {
         street: String,
@@ -105,7 +105,7 @@ const userSchema = new mongoose.Schema({
             specialization: {
                 type: [String],
                 default: ['General Practice'],
-                required: function() {
+                function() {
                     return this.parent().role === "lawyer" && this.parent().profileCompletion?.roleSpecificDetails;
                 }
             },
@@ -114,14 +114,14 @@ const userSchema = new mongoose.Schema({
                 min: 0,
                 max: 50,
                 default: 0,
-                required: function() {
+                function() {
                     return this.parent().role === "lawyer" && this.parent().profileCompletion?.roleSpecificDetails;
                 }
             },
             education: {
                 type: String,
                 default: 'Law Graduate',
-                required: function() {
+                function() {
                     return this.parent().role === "lawyer" && this.parent().profileCompletion?.roleSpecificDetails;
                 }
             },
@@ -152,6 +152,42 @@ const userSchema = new mongoose.Schema({
         {
             toUserId: mongoose.Schema.Types.ObjectId,
             timestamp: Date,
+        },
+    ],
+    // Direct connections with other users (lawyers/citizens)
+    directConnections: [
+        {
+            userId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                required: true,
+            },
+            userRole: {
+                type: String,
+                enum: ["citizen", "lawyer"],
+                required: true,
+            },
+            status: {
+                type: String,
+                enum: ["pending", "accepted", "rejected", "blocked"],
+                default: "pending",
+            },
+            requestedBy: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                required: true,
+            },
+            requestMessage: {
+                type: String,
+                maxlength: [500, "Request message cannot be more than 500 characters"],
+            },
+            connectedAt: {
+                type: Date,
+                default: Date.now,
+            },
+            chatId: {
+                type: String, // Reference to the chat room
+            },
         },
     ],
     // Connected lawyers/clients
@@ -200,27 +236,22 @@ userSchema.pre("save", function (next) {
         // Citizens don't need lawyer details
         this.lawyerDetails = undefined;
         // Citizens are auto-verified
-        if (this.isNew) {
-            this.isVerified = true;
-        }
+        this.isVerified = true;
     } else if (this.role === "lawyer") {
         // Lawyers need lawyer details
         if (!this.lawyerDetails) {
-            this.lawyerDetails = {
-                verificationStatus: "pending"
-            };
+            this.lawyerDetails = {};
         }
-        // Lawyers start as unverified
-        if (this.isNew) {
+
+        // New lawyers start as unverified (unless explicitly set)
+        if (this.isNew && this.isVerified === undefined) {
             this.isVerified = false;
         }
     } else if (this.role === "admin") {
         // Admins don't need lawyer details
         this.lawyerDetails = undefined;
         // Admins are auto-verified
-        if (this.isNew) {
-            this.isVerified = true;
-        }
+        this.isVerified = true;
     }
 
     next();

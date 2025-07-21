@@ -7,8 +7,6 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    // Allow ngrok host for external access
-    allowedHosts: ['40b80d1a2a7b.ngrok-free.app'],
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
@@ -19,6 +17,22 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
+      },
+      '/socket.io': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+        timeout: 60000,
+        proxyTimeout: 60000,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            // Suppress common WebSocket proxy errors
+            if (err.code !== 'ECONNABORTED' && err.code !== 'ECONNRESET') {
+              console.log('proxy error', err);
+            }
+          });
+        },
       }
     }
   },

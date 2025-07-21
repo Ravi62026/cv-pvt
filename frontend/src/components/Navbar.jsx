@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, User, LogOut, Settings, LayoutDashboard, Cpu } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import NotificationSystem from './NotificationSystem';
 import logCv from '../assets/log-cv.jpg';
 
 const Navbar = () => {
@@ -107,8 +108,13 @@ const Navbar = () => {
           {/* Desktop Auth Section */}
           <div className="hidden lg:block">
             {isAuthenticated ? (
-              <div className="relative">
-                <button
+              <div className="flex items-center space-x-4">
+                {/* Notification System */}
+                <NotificationSystem />
+
+                {/* User Menu */}
+                <div className="relative">
+                  <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
                   className="flex items-center space-x-3 p-2 rounded-lg hover:bg-white/10 transition-colors duration-200"
                 >
@@ -166,6 +172,7 @@ const Navbar = () => {
                     </motion.div>
                   )}
                 </AnimatePresence>
+                </div>
               </div>
             ) : (
               <div className="flex items-center space-x-4">

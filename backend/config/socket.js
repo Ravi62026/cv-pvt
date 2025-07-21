@@ -54,7 +54,10 @@ export const initializeSocket = (server) => {
     });
 
     io.on("connection", (socket) => {
-        console.log(`User connected: ${socket.userName} (${socket.id})`);
+        console.log(`🔌 USER CONNECTED: ${socket.userName} (${socket.id})`);
+        console.log(`   User ID: ${socket.userId}`);
+        console.log(`   Role: ${socket.userRole}`);
+        console.log(`   Socket ID: ${socket.id}`);
 
         // Store active user
         activeUsers.set(socket.id, {
@@ -66,17 +69,24 @@ export const initializeSocket = (server) => {
 
         // Join user to their personal notification room
         socket.join(`user_${socket.userId}`);
+        console.log(`   ✅ Joined personal room: user_${socket.userId}`);
 
         // Handle joining chat rooms
         socket.on("join_chat", async (chatId) => {
+            console.log(`🏠 JOIN_CHAT EVENT:`);
+            console.log(`   User: ${socket.userName} (${socket.userId})`);
+            console.log(`   Chat ID: ${chatId}`);
+
             try {
                 // Verify user has access to this chat
                 const hasAccess = await validateChatAccess(
                     chatId,
                     socket.userId
                 );
+                console.log(`   Access Check: ${hasAccess ? '✅ GRANTED' : '❌ DENIED'}`);
 
                 if (!hasAccess) {
+                    console.log(`   ❌ Access denied for user ${socket.userName} to chat ${chatId}`);
                     socket.emit("error", {
                         message: "Access denied to chat room",
                     });
@@ -84,6 +94,7 @@ export const initializeSocket = (server) => {
                 }
 
                 socket.join(chatId);
+                console.log(`   ✅ User joined chat room: ${chatId}`);
 
                 if (!activeChatRooms.has(chatId)) {
                     activeChatRooms.set(chatId, new Set());
@@ -128,10 +139,18 @@ export const initializeSocket = (server) => {
 
         // Handle new messages
         socket.on("send_message", async (messageData) => {
+            console.log(`💬 SEND_MESSAGE EVENT:`);
+            console.log(`   From: ${socket.userName} (${socket.userId})`);
+            console.log(`   Data:`, messageData);
+
             try {
                 const { chatId, content, messageType = "text" } = messageData;
+                console.log(`   Chat ID: ${chatId}`);
+                console.log(`   Content: ${content}`);
+                console.log(`   Message Type: ${messageType}`);
 
                 if (!content || content.trim().length === 0) {
+                    console.log(`   ❌ Empty message content`);
                     socket.emit("error", {
                         message: "Message content cannot be empty",
                     });
@@ -385,6 +404,154 @@ export const initializeSocket = (server) => {
             }
         });
 
+        // Handle direct connection requests (new system)
+        socket.on("send_connection_request", async (data) => {
+            console.log(`🤝 SEND_CONNECTION_REQUEST EVENT:`);
+            console.log(`   From: ${socket.userName} (${socket.userId})`);
+            console.log(`   Data:`, data);
+
+            try {
+                const { lawyerId, message, connectionType } = data;
+                console.log(`   To Lawyer ID: ${lawyerId}`);
+                console.log(`   Message: ${message}`);
+                console.log(`   Connection Type: ${connectionType}`);
+
+                // Import DirectConnection model
+                const { default: DirectConnection } = await import("../models/DirectConnection.js");
+
+                // Check if connection already exists
+                const existingConnection = await DirectConnection.findExistingConnection(socket.userId, lawyerId);
+
+                if (existingConnection && existingConnection.status === "pending") {
+                    socket.emit("connection_request_error", {
+                        message: "You already have a pending connection request with this lawyer",
+                    });
+                    return;
+                }
+
+                // Create new connection request
+                const newConnection = await DirectConnection.create({
+                    citizen: socket.userId,
+                    lawyer: lawyerId,
+                    requestMessage: message,
+                    metadata: {
+                        connectionType: connectionType || "general_consultation",
+                    },
+                });
+
+                // Notify lawyer
+                const notificationData = {
+                    connectionId: newConnection._id,
+                    citizen: {
+                        _id: socket.userId,
+                        name: socket.userName,
+                        role: socket.userRole,
+                    },
+                    message,
+                    connectionType,
+                    timestamp: new Date(),
+                };
+
+                console.log(`   🔔 Sending notification to lawyer room: user_${lawyerId}`);
+                console.log(`   Notification data:`, notificationData);
+
+                socket.to(`user_${lawyerId}`).emit("new_connection_request", notificationData);
+
+                // Confirm to sender
+                const confirmationData = {
+                    success: true,
+                    connectionId: newConnection._id,
+                };
+
+                console.log(`   ✅ Sending confirmation to sender:`, confirmationData);
+                socket.emit("connection_request_sent", confirmationData);
+            } catch (error) {
+                console.error("Connection request error:", error);
+                socket.emit("connection_request_error", {
+                    message: "Failed to send connection request",
+                });
+            }
+        });
+
+        // Handle connection request responses
+        socket.on("respond_to_connection_request", async (data) => {
+            try {
+                const { connectionId, action, responseMessage } = data; // action: 'accept' or 'reject'
+
+                // Import DirectConnection model
+                const { default: DirectConnection } = await import("../models/DirectConnection.js");
+
+                // Find the connection request
+                const connection = await DirectConnection.findOne({
+                    _id: connectionId,
+                    lawyer: socket.userId,
+                    status: "pending",
+                }).populate("citizen", "name email");
+
+                if (!connection) {
+                    socket.emit("connection_response_error", {
+                        message: "Connection request not found",
+                    });
+                    return;
+                }
+
+                if (action === "accept") {
+                    await connection.accept(responseMessage);
+
+                    // Create chat room
+                    const chat = await createChatRoom([
+                        { user: connection.citizen._id, role: "citizen" },
+                        { user: socket.userId, role: "lawyer" },
+                    ], "direct");
+
+                    // Update connection with chat ID
+                    connection.chatId = chat.chatId;
+                    await connection.save();
+
+                    // Notify citizen
+                    socket.to(`user_${connection.citizen._id}`).emit("connection_request_accepted", {
+                        connectionId: connection._id,
+                        chatId: chat.chatId,
+                        lawyer: {
+                            _id: socket.userId,
+                            name: socket.userName,
+                        },
+                        responseMessage,
+                        timestamp: new Date(),
+                    });
+
+                    socket.emit("connection_response_success", {
+                        action: "accepted",
+                        connectionId: connection._id,
+                        chatId: chat.chatId,
+                    });
+                } else if (action === "reject") {
+                    await connection.reject(responseMessage);
+
+                    // Notify citizen
+                    socket.to(`user_${connection.citizen._id}`).emit("connection_request_rejected", {
+                        connectionId: connection._id,
+                        lawyer: {
+                            _id: socket.userId,
+                            name: socket.userName,
+                        },
+                        responseMessage,
+                        timestamp: new Date(),
+                    });
+
+                    socket.emit("connection_response_success", {
+                        action: "rejected",
+                        connectionId: connection._id,
+                    });
+                }
+            } catch (error) {
+                console.error("Connection response error:", error);
+                socket.emit("connection_response_error", {
+                    message: "Failed to respond to connection request",
+                });
+            }
+        });
+
         // Handle marking messages as read
         socket.on("mark_messages_read", async (data) => {
             try {
@@ -432,24 +599,35 @@ export const initializeSocket = (server) => {
 
         // Handle disconnect
         socket.on("disconnect", (reason) => {
-            console.log(`User disconnected: ${socket.userName} (${reason})`);
+            console.log(`🔌 USER DISCONNECTED: ${socket.userName} (${reason})`);
+            console.log(`   User ID: ${socket.userId}`);
+            console.log(`   Socket ID: ${socket.id}`);
+            console.log(`   Reason: ${reason}`);
 
             // Remove user from active users
             activeUsers.delete(socket.id);
+            console.log(`   ✅ Removed from active users`);
 
             // Remove user from active chat rooms
+            let removedFromChats = 0;
             activeChatRooms.forEach((userSet, chatId) => {
-                userSet.delete(socket.id);
-                if (userSet.size === 0) {
-                    activeChatRooms.delete(chatId);
+                if (userSet.has(socket.id)) {
+                    userSet.delete(socket.id);
+                    removedFromChats++;
+                    if (userSet.size === 0) {
+                        activeChatRooms.delete(chatId);
+                        console.log(`   🗑️ Deleted empty chat room: ${chatId}`);
+                    }
                 }
             });
+            console.log(`   ✅ Removed from ${removedFromChats} chat rooms`);
 
             // Broadcast offline status
             socket.broadcast.emit("user_status_update", {
                 userId: socket.userId,
                 status: "offline",
             });
+            console.log(`   📡 Broadcasted offline status`);
         });
 
         // Handle connection errors

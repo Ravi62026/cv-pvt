@@ -71,9 +71,18 @@ export const getChatById = async (req, res) => {
 
         const paginatedMessages = chat.messages.slice(startIndex, endIndex);
 
-        // Mark messages as read
-        chat.markAsRead(req.user._id);
-        await chat.save();
+        // Mark messages as read (with retry on version error)
+        try {
+            chat.markAsRead(req.user._id);
+            await chat.save();
+        } catch (error) {
+            if (error.name === 'VersionError') {
+                console.log('Version conflict when marking messages as read, skipping...');
+                // Skip marking as read to avoid blocking the response
+            } else {
+                throw error;
+            }
+        }
 
         res.json({
             success: true,

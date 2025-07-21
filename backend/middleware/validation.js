@@ -31,6 +31,7 @@ export const validateRegister = [
         .withMessage("Phone number must be 10 digits"),
 
     body("captchaToken")
+        .if(() => process.env.NODE_ENV !== "development")
         .notEmpty()
         .withMessage("CAPTCHA verification is required"),
 
@@ -77,6 +78,7 @@ export const validateLogin = [
     body("password").notEmpty().withMessage("Password is required"),
 
     body("captchaToken")
+        .if(() => process.env.NODE_ENV !== "development")
         .notEmpty()
         .withMessage("CAPTCHA verification is required"),
 ];

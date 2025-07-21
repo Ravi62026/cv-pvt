@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import { authAPI } from '../services/api';
 
 // Initial state
 const initialState = {
@@ -218,6 +219,32 @@ export const AuthProvider = ({ children }) => {
     dispatch({ type: AUTH_ACTIONS.CLEAR_ERROR });
   };
 
+  // Refresh current user data
+  const refreshUser = async () => {
+    try {
+      if (!state.token) {
+        return { success: false, error: 'No token available' };
+      }
+
+      const response = await authAPI.getCurrentUser();
+
+      if (response.success) {
+        const updatedUser = response.data.user;
+        setStoredUser(updatedUser);
+        dispatch({
+          type: AUTH_ACTIONS.UPDATE_PROFILE,
+          payload: updatedUser,
+        });
+        return { success: true, data: updatedUser };
+      } else {
+        return { success: false, error: response.error };
+      }
+    } catch (error) {
+      console.error('Refresh user error:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
   // Role-based access control helpers
   const hasRole = (role) => {
     return state.user?.role === role;
@@ -237,20 +264,21 @@ export const AuthProvider = ({ children }) => {
   const value = {
     // State
     ...state,
-    
+
     // Actions
     login,
     logout,
     updateProfile,
     clearError,
-    
+    refreshUser,
+
     // Helpers
     hasRole,
     isLawyer,
     isCitizen,
     isAdmin,
     canAccess,
-    
+
     // Token for API calls
     getToken: () => state.token,
   };

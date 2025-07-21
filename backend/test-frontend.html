@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Lawyers API</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .lawyer { border: 1px solid #ccc; margin: 10px 0; padding: 10px; }
+        .error { color: red; }
+        .success { color: green; }
+        button { padding: 10px 20px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Test Lawyers API</h1>
+    <button onclick="testAPI()">Test Get Available Lawyers</button>
+    <div id="result"></div>
+
+    <script>
+        async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Loading...</p>';
+            
+            try {
+                console.log('🔍 Testing API call to /api/citizens/available-lawyers');
+                
+                const response = await fetch('http://localhost:5000/api/citizens/available-lawyers', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                console.log('📡 Response status:', response.status);
+                console.log('📡 Response headers:', response.headers);
+                
+                const data = await response.json();
+                console.log('📡 Response data:', data);
+                
+                if (data.success) {
+                    const lawyers = data.data.lawyers;
+                    console.log('✅ Found lawyers:', lawyers.length);
+                    
+                    let html = `<div class="success">
+                        <h3>✅ Success! Found ${lawyers.length} lawyers</h3>
+                        <p>Total: ${data.data.pagination.total}</p>
+                    </div>`;
+                    
+                    lawyers.forEach((lawyer, index) => {
+                        html += `<div class="lawyer">
+                            <h4>${index + 1}. ${lawyer.name}</h4>
+                            <p>Email: ${lawyer.email}</p>
+                            <p>Phone: ${lawyer.phone || 'Not provided'}</p>
+                            <p>Active: ${lawyer.isActive}</p>
+                            <p>Verified: ${lawyer.isVerified}</p>
+                            <p>Specialization: ${lawyer.lawyerDetails?.specialization?.join(', ') || 'Not specified'}</p>
+                        </div>`;
+                    });
+                    
+                    resultDiv.innerHTML = html;
+                } else {
+                    console.error('❌ API returned error:', data.message);
+                    resultDiv.innerHTML = `<div class="error">
+                        <h3>❌ Error</h3>
+                        <p>${data.message}</p>
+                    </div>`;
+                }
+            } catch (error) {
+                console.error('❌ Network error:', error);
+                resultDiv.innerHTML = `<div class="error">
+                    <h3>❌ Network Error</h3>
+                    <p>${error.message}</p>
+                    <p>Make sure the backend server is running on port 5000</p>
+                </div>`;
+            }
+        }
+        
+        // Test on page load
+        window.onload = function() {
+            console.log('🚀 Page loaded, ready to test API');
+        };
+    </script>
+</body>
+</html>

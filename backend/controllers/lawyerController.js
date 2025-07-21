@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import Query from "../models/Query.js";
 import Dispute from "../models/Dispute.js";
 import Chat from "../models/Chat.js";
+import DirectConnection from "../models/DirectConnection.js";
 
 // Get all verified lawyers
 export const getVerifiedLawyers = async (req, res) => {
@@ -16,12 +17,16 @@ export const getVerifiedLawyers = async (req, res) => {
             sortOrder = "desc",
         } = req.query;
 
+        console.log("🔍 getVerifiedLawyers called with params:", req.query);
+
         // Build query for verified lawyers
         const query = {
             role: "lawyer",
             isActive: true,
-            "lawyerDetails.verificationStatus": "verified",
+            isVerified: true,
         };
+
+        console.log("📋 Initial query:", query);
 
         // Add filters
         if (specialization && specialization !== "all") {
@@ -60,6 +65,21 @@ export const getVerifiedLawyers = async (req, res) => {
         const sortOptions = {};
         sortOptions[sortBy] = sortOrder === "desc" ? -1 : 1;
 
+        console.log("🔍 Final query before execution:", query);
+        console.log("📊 Sort options:", sortOptions);
+
+        // First, let's check total lawyers in database
+        const totalLawyersInDB = await User.countDocuments({ role: "lawyer" });
+        const activeLawyers = await User.countDocuments({ role: "lawyer", isActive: true });
+        const verifiedLawyers = await User.countDocuments({ role: "lawyer", isVerified: true });
+        const activeAndVerifiedLawyers = await User.countDocuments({ role: "lawyer", isActive: true, isVerified: true });
+
+        console.log("📈 Database stats:");
+        console.log("   Total lawyers:", totalLawyersInDB);
+        console.log("   Active lawyers:", activeLawyers);
+        console.log("   Verified lawyers:", verifiedLawyers);
+        console.log("   Active & Verified lawyers:", activeAndVerifiedLawyers);
+
         const lawyers = await User.find(query)
             .select("-password -refreshToken -messageRequests")
             .sort(sortOptions)
@@ -67,6 +87,10 @@ export const getVerifiedLawyers = async (req, res) => {
             .limit(parseInt(limit));
 
         const total = await User.countDocuments(query);
+
+        console.log("✅ Query executed successfully:");
+        console.log("   Found lawyers:", lawyers.length);
+        console.log("   Total matching query:", total);
 
         res.json({
             success: true,
@@ -97,7 +121,7 @@ export const getLawyerProfile = async (req, res) => {
             _id: lawyerId,
             role: "lawyer",
             isActive: true,
-            "lawyerDetails.verificationStatus": "verified",
+            isVerified: true,
         }).select("-password -refreshToken -messageRequests");
 
         if (!lawyer) {
@@ -834,6 +858,729 @@ export const getLawyerDashboardStats = async (req, res) => {
         res.status(500).json({
             success: false,
             message: "Failed to get dashboard statistics",
+        });
+    }
+};
+
+// Get pending direct connection requests for lawyer (new system)
+export const getPendingDirectConnectionRequests = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const lawyerId = req.user._id;
+
+        // Get pending connection requests
+        const pendingRequests = await DirectConnection.findPendingForLawyer(lawyerId)
+            .sort({ requestedAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(parseInt(limit));
+
+        const total = await DirectConnection.countDocuments({
+            lawyer: lawyerId,
+            status: "pending",
+            isActive: true,
+        });
+
+        res.json({
+            success: true,
+            data: {
+                requests: pendingRequests,
+                pagination: {
+                    current: parseInt(page),
+                    pages: Math.ceil(total / limit),
+                    total,
+                },
+            },
+        });
+    } catch (error) {
+        console.error("Get pending connection requests error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to get pending connection requests",
+        });
+    }
+};
+
+// Accept direct connection request (new system)
+export const acceptDirectConnectionRequest = async (req, res) => {
+    try {
+        const { connectionId } = req.params;
+        const { responseMessage = "" } = req.body;
+        const lawyerId = req.user._id;
+
+        // Find the connection request
+        const connection = await DirectConnection.findOne({
+            _id: connectionId,
+            lawyer: lawyerId,
+            status: "pending",
+            isActive: true,
+        }).populate("citizen", "name email");
+
+        if (!connection) {
+            return res.status(404).json({
+                success: false,
+                message: "Connection request not found",
+            });
+        }
+
+        // Accept the connection
+        await connection.accept(responseMessage);
+
+        // Create or get the chat room
+        let chat = await Chat.findOne({ chatId: connection.chatId });
+
+        if (!chat) {
+            chat = await Chat.create({
+                chatId: connection.chatId,
+                participants: [
+                    { user: connection.citizen._id, role: "citizen" },
+                    { user: lawyerId, role: "lawyer" },
+                ],
+                chatType: "direct",
+                status: "active",
+                directConnection: connection._id,
+            });
+        } else {
+            chat.status = "active";
+            await chat.save();
+        }
+
+        // Send real-time notification to citizen
+        const io = req.app.get("socketio");
+        if (io) {
+            io.to(`user_${connection.citizen._id}`).emit("connection_request_accepted", {
+                connectionId: connection._id,
+                chatId: connection.chatId,
+                lawyer: {
+                    _id: lawyerId,
+                    name: req.user.name,
+                    specialization: req.user.lawyerDetails?.specialization,
+                },
+                responseMessage,
+                timestamp: new Date(),
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "Connection request accepted successfully",
+            data: {
+                connection: connection.toObject(),
+                chatId: connection.chatId,
+            },
+        });
+    } catch (error) {
+        console.error("Accept connection request error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to accept connection request",
+        });
+    }
+};
+
+// Reject direct connection request (new system)
+export const rejectDirectConnectionRequest = async (req, res) => {
+    try {
+        const { connectionId } = req.params;
+        const { responseMessage = "" } = req.body;
+        const lawyerId = req.user._id;
+
+        // Find the connection request
+        const connection = await DirectConnection.findOne({
+            _id: connectionId,
+            lawyer: lawyerId,
+            status: "pending",
+            isActive: true,
+        }).populate("citizen", "name email");
+
+        if (!connection) {
+            return res.status(404).json({
+                success: false,
+                message: "Connection request not found",
+            });
+        }
+
+        // Reject the connection
+        await connection.reject(responseMessage);
+
+        // Send real-time notification to citizen
+        const io = req.app.get("socketio");
+        if (io) {
+            io.to(`user_${connection.citizen._id}`).emit("connection_request_rejected", {
+                connectionId: connection._id,
+                lawyer: {
+                    _id: lawyerId,
+                    name: req.user.name,
+                    specialization: req.user.lawyerDetails?.specialization,
+                },
+                responseMessage,
+                timestamp: new Date(),
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "Connection request rejected",
+            data: { connection: connection.toObject() },
+        });
+    } catch (error) {
+        console.error("Reject connection request error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to reject connection request",
+        });
+    }
+};
+
+// Get lawyer's connected citizens (new system)
+export const getMyConnectedCitizens = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const lawyerId = req.user._id;
+
+        // Get accepted connections
+        const connections = await DirectConnection.findAcceptedForUser(lawyerId, "lawyer");
+        console.log('🔍 BACKEND: Found connections for lawyer:', lawyerId, connections.length);
+        console.log('🔍 BACKEND: Connections:', connections.map(c => ({ id: c._id, chatId: c.chatId, status: c.status })));
+
+        // Paginate results
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedConnections = connections.slice(startIndex, endIndex);
+
+        // Add chat information for each connection
+        const connectionsWithChat = await Promise.all(
+            paginatedConnections.map(async (connection) => {
+                let chatInfo = null;
+
+                if (connection.chatId) {
+                    console.log('🔍 BACKEND: Looking for chat with chatId:', connection.chatId);
+                    const chat = await Chat.findOne({ chatId: connection.chatId })
+                        .populate("lastMessage.sender", "name role");
+
+                    console.log('🔍 BACKEND: Found chat:', chat ? 'YES' : 'NO');
+                    if (chat) {
+                        chatInfo = {
+                            chatId: chat.chatId,
+                            status: chat.status,
+                            lastMessage: chat.lastMessage,
+                            unreadCount: chat.getUnreadCount ? chat.getUnreadCount(lawyerId) : 0,
+                        };
+                    }
+                } else {
+                    console.log('🔍 BACKEND: Connection has no chatId:', connection._id);
+                }
+
+                return {
+                    ...connection.toObject(),
+                    chatInfo,
+                };
+            })
+        );
+
+        res.json({
+            success: true,
+            data: {
+                connections: connectionsWithChat,
+                pagination: {
+                    current: parseInt(page),
+                    pages: Math.ceil(connections.length / limit),
+                    total: connections.length,
+                },
+            },
+        });
+    } catch (error) {
+        console.error("Get connected citizens error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to get connected citizens",
+        });
+    }
+};
+
+// Get lawyer's case requests (requests sent by lawyer)
+export const getMyCaseRequests = async (req, res) => {
+    try {
+        const lawyerId = req.user._id;
+        const { page = 1, limit = 10, status } = req.query;
+
+        // Get all queries and disputes where this lawyer has sent requests
+        const [queries, disputes] = await Promise.all([
+            Query.find({
+                'lawyerRequests.lawyerId': lawyerId,
+                ...(status && { 'lawyerRequests.status': status })
+            })
+            .populate('citizen', 'name email')
+            .sort({ createdAt: -1 })
+            .limit(limit * 1)
+            .skip((page - 1) * limit),
+
+            Dispute.find({
+                'lawyerRequests.lawyerId': lawyerId,
+                ...(status && { 'lawyerRequests.status': status })
+            })
+            .populate('citizen', 'name email')
+            .sort({ createdAt: -1 })
+            .limit(limit * 1)
+            .skip((page - 1) * limit)
+        ]);
+
+        // Format the requests
+        const requests = [];
+
+        queries.forEach(query => {
+            const lawyerRequest = query.lawyerRequests.find(
+                req => req.lawyerId.toString() === lawyerId
+            );
+            if (lawyerRequest) {
+                requests.push({
+                    requestId: lawyerRequest._id,
+                    caseId: query._id,
+                    caseType: 'query',
+                    caseTitle: query.title,
+                    description: query.description,
+                    category: query.category,
+                    priority: query.priority,
+                    citizen: query.citizen,
+                    status: lawyerRequest.status,
+                    message: lawyerRequest.message,
+                    requestedAt: lawyerRequest.requestedAt,
+                    respondedAt: lawyerRequest.respondedAt
+                });
+            }
+        });
+
+        disputes.forEach(dispute => {
+            const lawyerRequest = dispute.lawyerRequests.find(
+                req => req.lawyerId.toString() === lawyerId
+            );
+            if (lawyerRequest) {
+                requests.push({
+                    requestId: lawyerRequest._id,
+                    caseId: dispute._id,
+                    caseType: 'dispute',
+                    caseTitle: dispute.title,
+                    description: dispute.description,
+                    category: dispute.category,
+                    priority: dispute.priority,
+                    disputeValue: dispute.disputeValue,
+                    citizen: dispute.citizen,
+                    status: lawyerRequest.status,
+                    message: lawyerRequest.message,
+                    requestedAt: lawyerRequest.requestedAt,
+                    respondedAt: lawyerRequest.respondedAt
+                });
+            }
+        });
+
+        // Sort by request date
+        requests.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+
+        res.json({
+            success: true,
+            data: {
+                requests,
+                pagination: {
+                    current: parseInt(page),
+                    total: requests.length,
+                    pages: Math.ceil(requests.length / limit)
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Get my case requests error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch case requests'
+        });
+    }
+};
+
+// Get received case requests (requests sent by citizens to this lawyer)
+export const getReceivedCaseRequests = async (req, res) => {
+    try {
+        const lawyerId = req.user._id;
+        const { page = 1, limit = 10, status } = req.query;
+
+        // Get all queries and disputes where citizens have requested this lawyer
+        const [queries, disputes] = await Promise.all([
+            Query.find({
+                'citizenRequests.lawyerId': lawyerId
+            })
+            .populate('citizen', 'name email')
+            .sort({ createdAt: -1 })
+            .limit(limit * 1)
+            .skip((page - 1) * limit),
+
+            Dispute.find({
+                'citizenRequests.lawyerId': lawyerId
+            })
+            .populate('citizen', 'name email')
+            .sort({ createdAt: -1 })
+            .limit(limit * 1)
+            .skip((page - 1) * limit)
+        ]);
+
+        // Format the requests
+        const requests = [];
+
+        queries.forEach(query => {
+            const citizenRequest = query.citizenRequests.find(
+                req => req.lawyerId.toString() === lawyerId.toString()
+            );
+            if (citizenRequest && (!status || citizenRequest.status === status)) {
+                requests.push({
+                    requestId: citizenRequest._id,
+                    caseId: query._id,
+                    caseType: 'query',
+                    caseTitle: query.title,
+                    description: query.description,
+                    category: query.category,
+                    priority: query.priority,
+                    citizen: query.citizen,
+                    status: citizenRequest.status,
+                    message: citizenRequest.message,
+                    requestedAt: citizenRequest.requestedAt,
+                    respondedAt: citizenRequest.respondedAt
+                });
+            }
+        });
+
+        disputes.forEach(dispute => {
+            const citizenRequest = dispute.citizenRequests.find(
+                req => req.lawyerId.toString() === lawyerId.toString()
+            );
+            if (citizenRequest && (!status || citizenRequest.status === status)) {
+                requests.push({
+                    requestId: citizenRequest._id,
+                    caseId: dispute._id,
+                    caseType: 'dispute',
+                    caseTitle: dispute.title,
+                    description: dispute.description,
+                    category: dispute.category,
+                    priority: dispute.priority,
+                    disputeValue: dispute.disputeValue,
+                    citizen: dispute.citizen,
+                    status: citizenRequest.status,
+                    message: citizenRequest.message,
+                    requestedAt: citizenRequest.requestedAt,
+                    respondedAt: citizenRequest.respondedAt
+                });
+            }
+        });
+
+        // Sort by request date
+        requests.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+
+        res.json({
+            success: true,
+            data: {
+                requests,
+                pagination: {
+                    current: parseInt(page),
+                    total: requests.length,
+                    pages: Math.ceil(requests.length / limit)
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Get received case requests error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch received requests'
+        });
+    }
+};
+
+// Accept case request
+export const acceptCaseRequest = async (req, res) => {
+    try {
+        const lawyerId = req.user._id;
+        const { requestId } = req.params;
+        const { response } = req.body;
+
+        // Find the request in queries (citizen requests to lawyer)
+        let request = await Query.findOne({
+            'citizenRequests._id': requestId,
+            'citizenRequests.lawyerId': lawyerId
+        });
+
+        let caseType = 'query';
+        let caseId = null;
+        let citizenId = null;
+
+        if (request) {
+            const requestIndex = request.citizenRequests.findIndex(r => r._id.toString() === requestId);
+            if (requestIndex !== -1) {
+                request.citizenRequests[requestIndex].status = 'accepted';
+                request.citizenRequests[requestIndex].respondedAt = new Date();
+                if (response) {
+                    request.citizenRequests[requestIndex].response = response;
+                }
+
+                // Set case assignment - this is the key fix!
+                request.assignedLawyer = lawyerId;
+                request.status = 'assigned';
+
+                // Auto-accept any pending lawyer requests for this case since it's now assigned
+                if (request.lawyerRequests && request.lawyerRequests.length > 0) {
+                    request.lawyerRequests.forEach(lr => {
+                        if (lr.lawyerId.toString() === lawyerId.toString() && lr.status === 'pending') {
+                            lr.status = 'accepted';
+                            lr.respondedAt = new Date();
+                        }
+                    });
+                }
+
+                await request.save();
+
+                caseType = 'query';
+                caseId = request._id;
+                citizenId = request.citizen;
+
+                // Create chat for the case
+                const chatId = `${caseType}_${caseId}`;
+                console.log('💬 BACKEND: Creating chat for accepted case request');
+                console.log('   Case Type:', caseType);
+                console.log('   Case ID:', caseId);
+                console.log('   Citizen ID:', citizenId);
+                console.log('   Generated Chat ID:', chatId);
+
+                // Check if chat already exists
+                let chat = await Chat.findOne({ chatId })
+                    .populate("participants.user", "name email role lawyerDetails.specialization")
+                    .populate("lastMessage.sender", "name role");
+
+                if (!chat) {
+                    // Create new case chat
+                    chat = await Chat.create({
+                        chatId,
+                        participants: [
+                            { user: citizenId, role: "citizen" },
+                            { user: lawyerId, role: "lawyer" },
+                        ],
+                        chatType: caseType,
+                        relatedCase: {
+                            caseType,
+                            caseId,
+                        },
+                        status: "active"
+                    });
+
+                    // Populate the newly created chat
+                    chat = await Chat.findOne({ chatId })
+                        .populate("participants.user", "name email role lawyerDetails.specialization")
+                        .populate("lastMessage.sender", "name role");
+                }
+
+                // Send real-time notification to citizen
+                const io = req.app.get("socketio");
+                if (io) {
+                    io.to(`user_${citizenId}`).emit("case_request_accepted", {
+                        caseType,
+                        caseId,
+                        chatId,
+                        lawyer: {
+                            _id: lawyerId,
+                            name: req.user.name
+                        }
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Case request accepted successfully',
+                    data: {
+                        request: request.citizenRequests[requestIndex],
+                        chat: {
+                            chatId,
+                            caseType
+                        }
+                    }
+                });
+                return;
+            }
+        }
+
+        // If not found in queries, check disputes (citizen requests to lawyer)
+        request = await Dispute.findOne({
+            'citizenRequests._id': requestId,
+            'citizenRequests.lawyerId': lawyerId
+        });
+
+        if (request) {
+            const requestIndex = request.citizenRequests.findIndex(r => r._id.toString() === requestId);
+            if (requestIndex !== -1) {
+                request.citizenRequests[requestIndex].status = 'accepted';
+                request.citizenRequests[requestIndex].respondedAt = new Date();
+                if (response) {
+                    request.citizenRequests[requestIndex].response = response;
+                }
+
+                // Set case assignment - this is the key fix!
+                request.assignedLawyer = lawyerId;
+                request.status = 'assigned';
+
+                // Auto-accept any pending lawyer requests for this case since it's now assigned
+                if (request.lawyerRequests && request.lawyerRequests.length > 0) {
+                    request.lawyerRequests.forEach(lr => {
+                        if (lr.lawyerId.toString() === lawyerId.toString() && lr.status === 'pending') {
+                            lr.status = 'accepted';
+                            lr.respondedAt = new Date();
+                        }
+                    });
+                }
+
+                await request.save();
+
+                caseType = 'dispute';
+                caseId = request._id;
+                citizenId = request.citizen;
+
+                // Create chat for the case
+                const chatId = `${caseType}_${caseId}`;
+                console.log('💬 BACKEND: Creating chat for accepted case request');
+                console.log('   Case Type:', caseType);
+                console.log('   Case ID:', caseId);
+                console.log('   Citizen ID:', citizenId);
+                console.log('   Generated Chat ID:', chatId);
+
+                // Check if chat already exists
+                let chat = await Chat.findOne({ chatId })
+                    .populate("participants.user", "name email role lawyerDetails.specialization")
+                    .populate("lastMessage.sender", "name role");
+
+                if (!chat) {
+                    // Create new case chat
+                    chat = await Chat.create({
+                        chatId,
+                        participants: [
+                            { user: citizenId, role: "citizen" },
+                            { user: lawyerId, role: "lawyer" },
+                        ],
+                        chatType: caseType,
+                        relatedCase: {
+                            caseType,
+                            caseId,
+                        },
+                        status: "active"
+                    });
+
+                    // Populate the newly created chat
+                    chat = await Chat.findOne({ chatId })
+                        .populate("participants.user", "name email role lawyerDetails.specialization")
+                        .populate("lastMessage.sender", "name role");
+                }
+
+                // Send real-time notification to citizen
+                const io = req.app.get("socketio");
+                if (io) {
+                    io.to(`user_${citizenId}`).emit("case_request_accepted", {
+                        caseType,
+                        caseId,
+                        chatId,
+                        lawyer: {
+                            _id: lawyerId,
+                            name: req.user.name
+                        }
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Case request accepted successfully',
+                    data: {
+                        request: request.citizenRequests[requestIndex],
+                        chat: {
+                            chatId,
+                            caseType
+                        }
+                    }
+                });
+                return;
+            }
+        }
+
+        res.status(404).json({
+            success: false,
+            message: 'Case request not found'
+        });
+
+    } catch (error) {
+        console.error('Accept case request error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to accept case request'
+        });
+    }
+};
+
+// Reject case request
+export const rejectCaseRequest = async (req, res) => {
+    try {
+        const lawyerId = req.user._id;
+        const { requestId } = req.params;
+        const { response } = req.body;
+
+        // Find the request in queries (citizen requests to lawyer)
+        let request = await Query.findOne({
+            'citizenRequests._id': requestId,
+            'citizenRequests.lawyerId': lawyerId
+        });
+
+        if (request) {
+            const requestIndex = request.citizenRequests.findIndex(r => r._id.toString() === requestId);
+            if (requestIndex !== -1) {
+                request.citizenRequests[requestIndex].status = 'rejected';
+                request.citizenRequests[requestIndex].respondedAt = new Date();
+                if (response) {
+                    request.citizenRequests[requestIndex].response = response;
+                }
+                await request.save();
+
+                res.json({
+                    success: true,
+                    message: 'Case request rejected',
+                    data: { request: request.citizenRequests[requestIndex] }
+                });
+                return;
+            }
+        }
+
+        // If not found in queries, check disputes (citizen requests to lawyer)
+        request = await Dispute.findOne({
+            'citizenRequests._id': requestId,
+            'citizenRequests.lawyerId': lawyerId
+        });
+
+        if (request) {
+            const requestIndex = request.citizenRequests.findIndex(r => r._id.toString() === requestId);
+            if (requestIndex !== -1) {
+                request.citizenRequests[requestIndex].status = 'rejected';
+                request.citizenRequests[requestIndex].respondedAt = new Date();
+                if (response) {
+                    request.citizenRequests[requestIndex].response = response;
+                }
+                await request.save();
+
+                res.json({
+                    success: true,
+                    message: 'Case request rejected',
+                    data: { request: request.citizenRequests[requestIndex] }
+                });
+                return;
+            }
+        }
+
+        res.status(404).json({
+            success: false,
+            message: 'Case request not found'
+        });
+
+    } catch (error) {
+        console.error('Reject case request error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to reject case request'
         });
     }
 };
