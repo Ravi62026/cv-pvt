@@ -5,6 +5,7 @@ import {
   FileText,
   Scale,
   Users,
+  UserPlus,
   TrendingUp,
   Clock,
   CheckCircle,
@@ -215,31 +216,31 @@ const LawyerDashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <QuickActionCard
             title="My Case Requests"
-            description="Requests you've sent for cases"
+            description="Manage all your case requests"
             icon={<Send className="h-8 w-8 text-purple-600" />}
-            onClick={() => navigate('/lawyer/pending-case-requests')}
+            onClick={() => navigate('/lawyer/my-case-requests')}
             color="purple"
           />
           <QuickActionCard
-            title="Received Requests"
-            description="Citizens requesting you for cases"
-            icon={<MessageCircle className="h-8 w-8 text-emerald-600" />}
-            onClick={() => navigate('/lawyer/received-case-requests')}
-            color="emerald"
-          />
-          <QuickActionCard
-            title="My Cases"
-            description="View and manage your assigned cases"
-            icon={<FileText className="h-8 w-8 text-blue-600" />}
-            onClick={() => navigate('/lawyer/my-cases')}
+            title="Direct Clients"
+            description="View and chat with your direct clients"
+            icon={<Users className="h-8 w-8 text-blue-600" />}
+            onClick={() => navigate('/lawyer/direct-clients')}
             color="blue"
           />
           <QuickActionCard
-            title="Client Connections"
-            description="Manage your client connections and direct chats"
-            icon={<Users className="h-8 w-8 text-green-600" />}
-            onClick={() => navigate('/lawyer/connections')}
+            title="Connection Requests"
+            description="Review pending connection requests"
+            icon={<UserPlus className="h-8 w-8 text-green-600" />}
+            onClick={() => navigate('/lawyer/pending-connection-requests')}
             color="green"
+          />
+          <QuickActionCard
+            title="Available Cases"
+            description="Browse and offer help on new cases"
+            icon={<FileText className="h-8 w-8 text-orange-600" />}
+            onClick={() => navigate('/lawyer/available-cases')}
+            color="orange"
           />
         </div>
       </div>

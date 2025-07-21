@@ -12,6 +12,7 @@ import {
   Eye,
   DollarSign,
   Send,
+  CheckCircle,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { lawyerAPI } from '../../services/api';
@@ -323,13 +324,20 @@ const CaseCard = ({ caseItem, index, onSendRequest, getStatusIcon, getStatusColo
             })}
           </span>
         </div>
-        <button
-          onClick={() => onSendRequest(caseItem)}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all shadow-sm"
-        >
-          <Send className="h-4 w-4 mr-1.5" />
-          Send Request
-        </button>
+        {caseItem.hasLawyerRequested ? (
+          <div className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-gray-600 bg-gray-100 border border-gray-200">
+            <CheckCircle className="h-4 w-4 mr-1.5 text-green-600" />
+            Already Requested
+          </div>
+        ) : (
+          <button
+            onClick={() => onSendRequest(caseItem)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all shadow-sm"
+          >
+            <Send className="h-4 w-4 mr-1.5" />
+            Send Request
+          </button>
+        )}
       </div>
     </motion.div>
   );

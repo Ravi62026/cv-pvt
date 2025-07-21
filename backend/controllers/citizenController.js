@@ -172,6 +172,8 @@ export const getMyCases = async (req, res) => {
         if (type === "all" || type === "queries") {
             const queries = await Query.find(baseQuery)
                 .populate("assignedLawyer", "name email lawyerDetails.specialization")
+                .populate("citizenRequests.lawyerId", "name email lawyerDetails.specialization")
+                .populate("lawyerRequests.lawyerId", "name email lawyerDetails.specialization")
                 .sort({ createdAt: -1 });
 
             for (const query of queries) {
@@ -194,10 +196,15 @@ export const getMyCases = async (req, res) => {
                     }
                 }
 
+                const queryObj = query.toObject();
+
                 cases.push({
-                    ...query.toObject(),
+                    ...queryObj,
                     caseType: "query",
-                    chatRoom
+                    chatRoom,
+                    // Include lawyer request information for frontend
+                    requestedLawyers: queryObj.citizenRequests || [],
+                    receivedOffers: queryObj.lawyerRequests || []
                 });
             }
         }
@@ -205,6 +212,8 @@ export const getMyCases = async (req, res) => {
         if (type === "all" || type === "disputes") {
             const disputes = await Dispute.find(baseQuery)
                 .populate("assignedLawyer", "name email lawyerDetails.specialization")
+                .populate("citizenRequests.lawyerId", "name email lawyerDetails.specialization")
+                .populate("lawyerRequests.lawyerId", "name email lawyerDetails.specialization")
                 .sort({ createdAt: -1 });
 
             for (const dispute of disputes) {
@@ -227,10 +236,15 @@ export const getMyCases = async (req, res) => {
                     }
                 }
 
+                const disputeObj = dispute.toObject();
+
                 cases.push({
-                    ...dispute.toObject(),
+                    ...disputeObj,
                     caseType: "dispute",
-                    chatRoom
+                    chatRoom,
+                    // Include lawyer request information for frontend
+                    requestedLawyers: disputeObj.citizenRequests || [],
+                    receivedOffers: disputeObj.lawyerRequests || []
                 });
             }
         }
@@ -1332,7 +1346,7 @@ export const getMyCaseRequests = async (req, res) => {
 // Get received offers (requests sent by lawyers to citizen's cases)
 export const getMyCaseOffers = async (req, res) => {
     try {
-        const citizenId = req.user.id;
+        const citizenId = req.user._id;
         const { page = 1, limit = 10, status } = req.query;
 
         // Get all queries and disputes where lawyers have sent requests
@@ -1475,6 +1489,17 @@ export const acceptCaseOffer = async (req, res) => {
                     });
                 }
 
+                // Auto-reject all other pending lawyer requests for this case
+                if (request.lawyerRequests && request.lawyerRequests.length > 0) {
+                    request.lawyerRequests.forEach((lr, index) => {
+                        if (index !== requestIndex && lr.status === 'pending') {
+                            lr.status = 'rejected';
+                            lr.respondedAt = new Date();
+                            lr.response = 'Sorry, I have already signed with another lawyer for this case.';
+                        }
+                    });
+                }
+
                 await request.save();
 
                 caseType = 'query';
@@ -1512,6 +1537,17 @@ export const acceptCaseOffer = async (req, res) => {
                             if (cr.lawyerId.toString() === request.lawyerRequests[requestIndex].lawyerId.toString() && cr.status === 'pending') {
                                 cr.status = 'accepted';
                                 cr.respondedAt = new Date();
+                            }
+                        });
+                    }
+
+                    // Auto-reject all other pending lawyer requests for this case
+                    if (request.lawyerRequests && request.lawyerRequests.length > 0) {
+                        request.lawyerRequests.forEach((lr, index) => {
+                            if (index !== requestIndex && lr.status === 'pending') {
+                                lr.status = 'rejected';
+                                lr.respondedAt = new Date();
+                                lr.response = 'Sorry, I have already signed with another lawyer for this case.';
                             }
                         });
                     }

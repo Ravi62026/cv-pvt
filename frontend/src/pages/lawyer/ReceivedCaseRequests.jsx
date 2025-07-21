@@ -31,9 +31,11 @@ const ReceivedCaseRequests = () => {
   const fetchReceivedRequests = async () => {
     setIsLoading(true);
     try {
-      const response = await lawyerAPI.getReceivedCaseRequests();
+      // Filter for pending requests by default
+      const response = await lawyerAPI.getReceivedCaseRequests({ status: 'pending' });
       if (response.success) {
         setRequests(response.data?.requests || []);
+        console.log('📋 LAWYER: Received pending requests:', response.data?.requests?.length || 0);
       } else {
         error('Failed to load received requests');
       }

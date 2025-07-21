@@ -21,6 +21,9 @@ import LawyerDashboard from './pages/lawyer/LawyerDashboard';
 import AvailableCases from './pages/lawyer/AvailableCases';
 import PendingCaseRequests from './pages/lawyer/PendingCaseRequests';
 import ReceivedCaseRequests from './pages/lawyer/ReceivedCaseRequests';
+import LawyerMyCaseRequests from './pages/lawyer/MyCaseRequests';
+import DirectClients from './pages/lawyer/DirectClients';
+import PendingConnectionRequests from './pages/lawyer/PendingConnectionRequests';
 import FindLawyers from './pages/FindLawyers';
 import ConnectedLawyers from './pages/ConnectedLawyers';
 import IncomingRequests from './pages/IncomingRequests';
@@ -111,8 +114,11 @@ function App() {
                 {/* Lawyer Routes */}
                 <Route path="/lawyer/dashboard" element={<Layout><LawyerDashboard /></Layout>} />
                 <Route path="/lawyer/available-cases" element={<Layout><AvailableCases /></Layout>} />
+                <Route path="/lawyer/my-case-requests" element={<Layout><LawyerMyCaseRequests /></Layout>} />
                 <Route path="/lawyer/pending-case-requests" element={<Layout><PendingCaseRequests /></Layout>} />
                 <Route path="/lawyer/received-case-requests" element={<Layout><ReceivedCaseRequests /></Layout>} />
+                <Route path="/lawyer/direct-clients" element={<Layout><DirectClients /></Layout>} />
+                <Route path="/lawyer/pending-connection-requests" element={<Layout><PendingConnectionRequests /></Layout>} />
                 <Route path="/lawyer/incoming-requests" element={<Layout><IncomingRequests /></Layout>} />
                 <Route path="/lawyer/connected-clients" element={<Layout><ConnectedClients /></Layout>} />
 

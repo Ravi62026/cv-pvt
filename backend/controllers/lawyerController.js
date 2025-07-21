@@ -212,8 +212,9 @@ export const offerHelpOnCase = async (req, res) => {
         }
 
         // Check if lawyer already offered help
+        const lawyerId = req.user._id;
         const existingOffer = caseDoc.lawyerRequests?.find(
-            req => req.lawyerId.toString() === req.user._id.toString() && req.status === "pending"
+            request => request.lawyerId.toString() === lawyerId.toString() && request.status === "pending"
         );
 
         if (existingOffer) {
@@ -282,6 +283,8 @@ export const getAvailableCases = async (req, res) => {
             sortOrder = "desc",
         } = req.query;
 
+
+
         let cases = [];
 
         // Build base query for unassigned cases
@@ -290,7 +293,7 @@ export const getAvailableCases = async (req, res) => {
                 { assignedLawyer: { $exists: false } },
                 { assignedLawyer: null }
             ],
-            status: { $in: ["pending", "open"] },
+            status: "pending", // Only pending cases are available for assignment
         };
 
         // Add filters
@@ -307,16 +310,28 @@ export const getAvailableCases = async (req, res) => {
             ];
         }
 
+        const lawyerId = req.user._id;
+
         // Get queries
         if (caseType === "all" || caseType === "query") {
             const queries = await Query.find(baseQuery)
                 .populate("citizen", "name email phone")
                 .sort({ [sortBy]: sortOrder === "desc" ? -1 : 1 });
 
-            cases.push(...queries.map(query => ({
-                ...query.toObject(),
-                caseType: "query"
-            })));
+
+
+            cases.push(...queries.map(query => {
+                const queryObj = query.toObject();
+                // Check if current lawyer has already sent a request
+                const hasRequested = query.lawyerRequests && query.lawyerRequests.some(req =>
+                    req.lawyerId.toString() === lawyerId.toString()
+                );
+                return {
+                    ...queryObj,
+                    caseType: "query",
+                    hasLawyerRequested: hasRequested
+                };
+            }));
         }
 
         // Get disputes
@@ -325,11 +340,23 @@ export const getAvailableCases = async (req, res) => {
                 .populate("citizen", "name email phone")
                 .sort({ [sortBy]: sortOrder === "desc" ? -1 : 1 });
 
-            cases.push(...disputes.map(dispute => ({
-                ...dispute.toObject(),
-                caseType: "dispute"
-            })));
+
+
+            cases.push(...disputes.map(dispute => {
+                const disputeObj = dispute.toObject();
+                // Check if current lawyer has already sent a request
+                const hasRequested = dispute.lawyerRequests && dispute.lawyerRequests.some(req =>
+                    req.lawyerId.toString() === lawyerId.toString()
+                );
+                return {
+                    ...disputeObj,
+                    caseType: "dispute",
+                    hasLawyerRequested: hasRequested
+                };
+            }));
         }
+
+
 
         // Sort combined results
         cases.sort((a, b) => {
@@ -1103,6 +1130,8 @@ export const getMyCaseRequests = async (req, res) => {
         const lawyerId = req.user._id;
         const { page = 1, limit = 10, status } = req.query;
 
+
+
         // Get all queries and disputes where this lawyer has sent requests
         const [queries, disputes] = await Promise.all([
             Query.find({
@@ -1124,12 +1153,14 @@ export const getMyCaseRequests = async (req, res) => {
             .skip((page - 1) * limit)
         ]);
 
+
+
         // Format the requests
         const requests = [];
 
         queries.forEach(query => {
             const lawyerRequest = query.lawyerRequests.find(
-                req => req.lawyerId.toString() === lawyerId
+                req => req.lawyerId.toString() === lawyerId.toString()
             );
             if (lawyerRequest) {
                 requests.push({
@@ -1151,7 +1182,7 @@ export const getMyCaseRequests = async (req, res) => {
 
         disputes.forEach(dispute => {
             const lawyerRequest = dispute.lawyerRequests.find(
-                req => req.lawyerId.toString() === lawyerId
+                req => req.lawyerId.toString() === lawyerId.toString()
             );
             if (lawyerRequest) {
                 requests.push({
@@ -1201,6 +1232,8 @@ export const getReceivedCaseRequests = async (req, res) => {
         const lawyerId = req.user._id;
         const { page = 1, limit = 10, status } = req.query;
 
+
+
         // Get all queries and disputes where citizens have requested this lawyer
         const [queries, disputes] = await Promise.all([
             Query.find({
@@ -1219,6 +1252,8 @@ export const getReceivedCaseRequests = async (req, res) => {
             .limit(limit * 1)
             .skip((page - 1) * limit)
         ]);
+
+
 
         // Format the requests
         const requests = [];

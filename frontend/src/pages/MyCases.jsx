@@ -15,15 +15,17 @@ import {
   Eye,
   DollarSign,
   MessageCircle,
+  Send,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { citizenAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
 const MyCases = () => {
   const navigate = useNavigate();
-  const { user, getToken } = useAuth();
-  const { success, error } = useToast();
+  const { getToken } = useAuth();
+  const { error } = useToast(); // Only need error for fetchData
 
   // Test function for navigation
   const handleTestNavigation = () => {
@@ -69,6 +71,7 @@ const MyCases = () => {
 
           console.log('Loaded queries:', queriesData.length);
           console.log('Loaded disputes:', disputesData.length);
+          console.log('Sample case with requests:', cases[0]?.requestedLawyers, cases[0]?.receivedOffers);
         } else {
           console.log('No cases found or invalid response structure');
           setQueries([]);
@@ -147,6 +150,8 @@ const MyCases = () => {
         return 'bg-gray-100 text-gray-800';
     }
   };
+
+
 
   // Combine and filter data
   const allCases = [
@@ -344,6 +349,7 @@ const MyCases = () => {
                 getStatusIcon={getStatusIcon}
                 getStatusColor={getStatusColor}
                 getPriorityColor={getPriorityColor}
+                fetchData={fetchData}
               />
             ))}
           </div>
@@ -354,8 +360,9 @@ const MyCases = () => {
 };
 
 // Case Card Component
-const CaseCard = ({ item, index, onViewDetails, onFindLawyer, getStatusIcon, getStatusColor, getPriorityColor }) => {
+const CaseCard = ({ item, index, onViewDetails, onFindLawyer, getStatusIcon, getStatusColor, getPriorityColor, fetchData }) => {
   const navigate = useNavigate();
+  const { success, error } = useToast();
 
   const handleStartChat = () => {
     console.log('🚀 CITIZEN: Start Chat clicked');
@@ -375,7 +382,39 @@ const CaseCard = ({ item, index, onViewDetails, onFindLawyer, getStatusIcon, get
     }
   };
 
+  // Handle accepting lawyer offer
+  const handleAcceptOffer = async (offerId) => {
+    try {
+      const response = await citizenAPI.acceptCaseOffer(offerId);
 
+      if (response.success) {
+        success('Lawyer offer accepted successfully! Other pending offers have been automatically rejected.');
+        fetchData(); // Refresh the data
+      } else {
+        error(response.error || 'Failed to accept offer');
+      }
+    } catch (err) {
+      console.error('Accept offer error:', err);
+      error('Failed to accept offer');
+    }
+  };
+
+  // Handle rejecting lawyer offer
+  const handleRejectOffer = async (offerId) => {
+    try {
+      const response = await citizenAPI.rejectCaseOffer(offerId);
+
+      if (response.success) {
+        success('Lawyer offer rejected');
+        fetchData(); // Refresh the data
+      } else {
+        error(response.error || 'Failed to reject offer');
+      }
+    } catch (err) {
+      console.error('Reject offer error:', err);
+      error('Failed to reject offer');
+    }
+  };
 
   const isAssigned = item.status === 'assigned' || item.status === 'in-progress';
   const hasChatRoom = item.chatRoom && item.chatRoom.chatId;
@@ -449,6 +488,124 @@ const CaseCard = ({ item, index, onViewDetails, onFindLawyer, getStatusIcon, get
         </div>
       )}
 
+      {/* Lawyer Interactions */}
+      {!item.assignedLawyer && (
+        <>
+          {/* Requests sent by citizen to lawyers */}
+          {item.requestedLawyers && item.requestedLawyers.length > 0 && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+              <div className="flex items-center mb-2">
+                <Send className="h-5 w-5 text-blue-600 mr-2" />
+                <span className="text-sm font-semibold text-blue-800">
+                  Requests Sent by You ({item.requestedLawyers.length})
+                </span>
+              </div>
+              <div className="space-y-2">
+                {item.requestedLawyers.map((request, index) => (
+                  <div key={index} className="flex items-center justify-between text-sm">
+                    <div>
+                      <span className="font-medium text-blue-800">
+                        {request.lawyerId?.name || 'Unknown Lawyer'}
+                      </span>
+                      {request.lawyerId?.lawyerDetails?.specialization && (
+                        <span className="text-xs text-blue-600 ml-2">
+                          ({request.lawyerId.lawyerDetails.specialization.join(', ')})
+                        </span>
+                      )}
+                      <div className="text-xs text-blue-600 mt-1">
+                        You requested this lawyer
+                      </div>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      request.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                      request.status === 'accepted' ? 'bg-green-100 text-green-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {request.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Offers received from lawyers */}
+          {item.receivedOffers && item.receivedOffers.length > 0 && (
+            <div className="mb-4 p-3 bg-green-50 rounded-lg">
+              <div className="flex items-center mb-2">
+                <MessageCircle className="h-5 w-5 text-green-600 mr-2" />
+                <span className="text-sm font-semibold text-green-800">
+                  Offers from Lawyers ({item.receivedOffers.length})
+                </span>
+              </div>
+              <div className="space-y-3">
+                {item.receivedOffers.map((offer, index) => (
+                  <div key={index} className="border border-green-200 rounded-lg p-3 bg-white">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center mb-2">
+                          <span className="font-medium text-green-800">
+                            {offer.lawyerId?.name || 'Unknown Lawyer'}
+                          </span>
+                          {offer.lawyerId?.lawyerDetails?.specialization && (
+                            <span className="text-xs text-green-600 ml-2">
+                              ({offer.lawyerId.lawyerDetails.specialization.join(', ')})
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-green-600 mb-2">
+                          Lawyer offered to help
+                        </div>
+                        {offer.message && (
+                          <div className="text-xs text-gray-600 mb-2 italic">
+                            "{offer.message}"
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {offer.status === 'pending' ? (
+                          <>
+                            <button
+                              onClick={() => handleAcceptOffer(offer._id)}
+                              className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              onClick={() => handleRejectOffer(offer._id)}
+                              className="px-3 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              offer.status === 'accepted' ? 'bg-green-100 text-green-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {offer.status}
+                            </span>
+                            {offer.status === 'accepted' && (
+                              <button
+                                onClick={() => navigate(`/citizen/chat?caseType=${item.type}&caseId=${item._id}`)}
+                                className="px-3 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors"
+                              >
+                                Start Chat
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {/* Dispute Value (for disputes only) */}
       {item.type === 'dispute' && item.disputeValue && (
         <div className="flex items-center mb-4 p-3 bg-green-50 rounded-lg">
@@ -495,7 +652,8 @@ const CaseCard = ({ item, index, onViewDetails, onFindLawyer, getStatusIcon, get
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all shadow-sm"
             >
               <User className="h-4 w-4 mr-1.5" />
-              {isAssigned ? 'Change Lawyer' : 'Find Lawyer'}
+              {isAssigned ? 'Change Lawyer' :
+               (item.requestedLawyers && item.requestedLawyers.length > 0 ? 'View Requests' : 'Find Lawyer')}
             </button>
           )}
         </div>

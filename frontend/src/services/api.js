@@ -980,6 +980,91 @@ export const lawyerAPI = {
       };
     }
   },
+
+  // Get my direct clients
+  async getMyDirectClients(params = {}) {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const response = await apiClient.get(`/lawyers/my-direct-clients?${queryString}`);
+      return {
+        success: true,
+        data: response.data,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  },
+
+  // Get pending connection requests
+  async getPendingConnectionRequests(params = {}) {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const response = await apiClient.get(`/lawyers/pending-connection-requests?${queryString}`);
+      return {
+        success: true,
+        data: response.data,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  },
+
+  // Accept connection request
+  async acceptConnectionRequest(connectionId) {
+    try {
+      const response = await apiClient.post(`/lawyers/accept-connection-request/${connectionId}`);
+      return {
+        success: true,
+        data: response.data,
+        message: response.message,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  },
+
+  // Reject connection request
+  async rejectConnectionRequest(connectionId) {
+    try {
+      const response = await apiClient.post(`/lawyers/reject-connection-request/${connectionId}`);
+      return {
+        success: true,
+        data: response.data,
+        message: response.message,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  },
+
+  // Get connected citizens
+  async getMyConnectedCitizens(params = {}) {
+    try {
+      const queryString = new URLSearchParams(params).toString();
+      const response = await apiClient.get(`/lawyers/connected-citizens?${queryString}`);
+      return {
+        success: true,
+        data: response.data,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  },
 };
 
 // Chat API services
